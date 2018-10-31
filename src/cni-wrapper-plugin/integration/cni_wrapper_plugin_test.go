@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
-
-	"code.cloudfoundry.org/garden"
+	"syscall"
 
 	"code.cloudfoundry.org/cf-networking-helpers/testsupport/ports"
+	"code.cloudfoundry.org/garden"
 	noop_debug "github.com/containernetworking/cni/plugins/test/noop/debug"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -20,8 +21,6 @@ import (
 	"github.com/onsi/gomega/gexec"
 	"github.com/pivotal-cf-experimental/gomegamatchers"
 	"github.com/vishvananda/netlink"
-	"net/http"
-	"syscall"
 )
 
 type InputStruct struct {
@@ -37,7 +36,6 @@ const (
 	UnprivilegedUserId  = uint32(65534)
 	UnprivilegedGroupId = uint32(65534)
 )
-
 
 // Always run serially, this is setup in the test.sh file
 // Test writes to disk and modifies iptables
@@ -149,8 +147,8 @@ var _ = Describe("CniWrapperPlugin", func() {
 			WrapperConfig: lib.WrapperConfig{
 				DatastoreFileOwner: "nobody",
 				DatastoreFileGroup: "nogroup",
-				Datastore:        datastorePath,
-				IPTablesLockFile: iptablesLockFilePath,
+				Datastore:          datastorePath,
+				IPTablesLockFile:   iptablesLockFilePath,
 				Delegate: map[string]interface{}{
 					"type": "noop",
 					"some": "other data",
@@ -411,7 +409,6 @@ var _ = Describe("CniWrapperPlugin", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(session).Should(gexec.Exit(0))
 
-
 			fileInfo, err := os.Stat(iptablesLockFilePath)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -453,10 +450,8 @@ var _ = Describe("CniWrapperPlugin", func() {
 				Eventually(session).Should(gexec.Exit(0))
 
 				By("checking that the container's input chain comes after the already present iptables rule")
-				Expect(AllIPTablesRules("filter")).To(gomegamatchers.ContainSequence([]string{
-					"-A INPUT -d 127.0.0.1/32 -j ACCEPT",
-					"-A INPUT -s 1.2.3.4/32 -j " + inputChainName,
-				}))
+				Expect(AllIPTablesRules("filter")).To(ContainElement("-A INPUT -d 127.0.0.1/32 -j ACCEPT"))
+				Expect(AllIPTablesRules("filter")).To(ContainElement("-A INPUT -s 1.2.3.4/32 -j " + inputChainName))
 			})
 		})
 
@@ -928,7 +923,6 @@ var _ = Describe("CniWrapperPlugin", func() {
 			session, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(session).Should(gexec.Exit(0))
-
 
 			fileInfo, err := os.Stat(iptablesLockFilePath)
 			Expect(err).NotTo(HaveOccurred())

@@ -2,11 +2,10 @@ package enforcer_test
 
 import (
 	"errors"
+	libfakes "lib/fakes"
 	"lib/rules"
 	"vxlan-policy-agent/enforcer"
 	"vxlan-policy-agent/enforcer/fakes"
-
-	libfakes "lib/fakes"
 
 	"code.cloudfoundry.org/lager/lagertest"
 	. "github.com/onsi/ginkgo"
@@ -34,7 +33,7 @@ var _ = Describe("Enforcer", func() {
 			iptables = &libfakes.IPTablesAdapter{}
 
 			timestamper.CurrentTimeReturns(42)
-			ruleEnforcer = enforcer.NewEnforcer(logger, timestamper, iptables)
+			ruleEnforcer = enforcer.NewEnforcer(logger, timestamper, iptables, enforcer.EnforcerConfig{DisableContainerNetworkPolicy: false, OverlayNetwork: "10.10.0.0/16"})
 		})
 
 		It("enforces all the rules it receives on the correct chain", func() {
@@ -159,6 +158,38 @@ var _ = Describe("Enforcer", func() {
 
 				Expect(logger).To(gbytes.Say("create-chain.*banana"))
 			})
+		})
+
+		Context("when network policy is disabled", func() {
+			BeforeEach(func() {
+				ruleEnforcer = enforcer.NewEnforcer(logger, timestamper, iptables, enforcer.EnforcerConfig{DisableContainerNetworkPolicy: true, OverlayNetwork: "10.10.0.0/16"})
+			})
+
+			It("allows all container connections", func() {
+
+				err := ruleEnforcer.Enforce("some-table", "some-chain", "foo", []rules.IPTablesRule{fakeRule}...)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(iptables.NewChainCallCount()).To(Equal(1))
+				Expect(iptables.AllowTrafficForRangeCallCount()).To(Equal(1))
+				Expect(iptables.BulkInsertCallCount()).To(Equal(1))
+				_, _, position, _ := iptables.BulkInsertArgsForCall(0)
+				Expect(position).To(Equal(2))
+			})
+
+			Context("when inserting rule fails", func() {
+				BeforeEach(func() {
+					iptables.AllowTrafficForRangeReturns(errors.New("banana"))
+				})
+
+				It("it logs and returns a useful error", func() {
+					err := ruleEnforcer.Enforce("some-table", "some-chain", "foo", []rules.IPTablesRule{fakeRule}...)
+					Expect(err).To(MatchError("allowing traffic for range: banana"))
+
+					Expect(logger).To(gbytes.Say("allow-traffic-for-range.*banana"))
+				})
+			})
+
 		})
 	})
 	Describe("RulesWithChain", func() {
